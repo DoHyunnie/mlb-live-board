@@ -1,7 +1,13 @@
-﻿# MLB Live Board
+﻿# Live Board
 
-Live MLB scores + starting pitcher strikeouts. Times in Pacific (PT).
+Multi-sport live scores + MLB strikeout prop tracker.
 
-Works fully in the browser against the free MLB Stats API — no home PC required.
+**Open:** https://dohyunnie.github.io/mlb-live-board/
 
-Open: https://dohyunnie.github.io/mlb-live-board/
+- **MLB** — scores, SP strikeouts (Pacific time)
+- **NBA** — live scores
+- **Tennis** — ATP + WTA
+- **Esports** — Dota 2 pro (OpenDota)
+- **Track** — custom Over/Under K lines, live HIT/MISS
+
+Tracks save in your browser (localStorage) on that device.
