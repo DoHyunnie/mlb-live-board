@@ -38,6 +38,7 @@ let activeTab = "mlb";
 let filter = "all";
 let timer = null;
 let mlbCache = null; // last MLB payload for Track
+let loadGen = 0; // cancels stale async renders when switching tabs
 const cache = { mlb: null, nba: null, tennis: null, esports: null };
 
 /* ── Utils ── */
@@ -59,10 +60,10 @@ function todayPT() {
 
 function esc(s) {
   return String(s ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 function asInt(v, fallback = 0) {
@@ -275,7 +276,7 @@ function mapEspnStatus(type) {
 
 async function fetchNba(dateStr) {
   // ESPN date as yyyymmdd
-  const ymd = (dateStr || todayPT()).replaceAll("-", "");
+  const ymd = (dateStr || todayPT()).replace(/-/g, "");
   const data = await getJson(`${ESPN}/basketball/nba/scoreboard?dates=${ymd}`);
   const games = (data.events || []).map((ev) => {
     const comp = (ev.competitions || [])[0] || {};
@@ -724,42 +725,78 @@ function renderTrack() {
       .join("");
   }
 
-  // wire remove buttons
-  trackBoard.querySelectorAll("[data-remove]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const id = btn.getAttribute("data-remove");
-      saveTracks(loadTracks().filter((t) => t.id !== id));
-      renderTrack();
-    });
-  });
-
-  liveDot.className = "dot ok";
-  statusText.textContent = mlb?.updatedAt
-    ? `Track · MLB updated ${new Date(mlb.updatedAt).toLocaleTimeString()}`
-    : "Track";
+  if (liveDot) liveDot.className = "dot ok";
+  if (statusText) {
+    statusText.textContent = mlb?.updatedAt
+      ? `Track · MLB updated ${new Date(mlb.updatedAt).toLocaleTimeString()}`
+      : "Track";
+  }
 }
 
 /* ── Tab / load orchestration ── */
-function setTab(tab) {
-  activeTab = tab;
+function updateChromeForTab(tab) {
   document.querySelectorAll(".sport-tab").forEach((b) => {
-    b.classList.toggle("active", b.dataset.tab === tab);
+    const on = b.getAttribute("data-tab") === tab;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-selected", on ? "true" : "false");
   });
 
   const isTrack = tab === "track";
-  scoreView.classList.toggle("hidden", isTrack);
-  trackView.classList.toggle("hidden", !isTrack);
+  if (scoreView) scoreView.classList.toggle("hidden", isTrack);
+  if (trackView) trackView.classList.toggle("hidden", !isTrack);
 
-  // Date picker: MLB + NBA
-  dateWrap.classList.toggle("hidden", tab === "tennis" || tab === "esports" || tab === "track");
-  // Filters: hide on tennis/esports/track or keep for tennis
-  filtersEl.classList.toggle("hidden", tab === "track" || tab === "esports");
+  // Date picker: MLB + NBA only
+  if (dateWrap) {
+    dateWrap.classList.toggle(
+      "hidden",
+      tab === "tennis" || tab === "esports" || tab === "track"
+    );
+  }
+  // Status filters on scoreboard sports
+  if (filtersEl) {
+    filtersEl.classList.toggle("hidden", tab === "track" || tab === "esports");
+  }
+}
+
+function setTab(tab) {
+  if (!tab) return;
+  if (tab === activeTab && cache[tab]) {
+    // already here — still re-render cached view
+    updateChromeForTab(tab);
+    if (tab === "track") renderTrack();
+    else if (cache[tab]) renderScoreboard(cache[tab]);
+    return;
+  }
+
+  activeTab = tab;
+  // Reset status filter when switching sports so boards aren't empty
+  filter = "all";
+  document.querySelectorAll(".chip").forEach((c) => {
+    c.classList.toggle("active", c.getAttribute("data-filter") === "all");
+  });
+
+  updateChromeForTab(tab);
+
+  // Instant paint from cache while fresh data loads
+  if (tab === "track") {
+    boardEl.innerHTML = "";
+    renderTrack();
+  } else if (cache[tab]) {
+    emptyEl.classList.add("hidden");
+    errorEl.classList.add("hidden");
+    renderScoreboard(cache[tab]);
+  } else {
+    boardEl.innerHTML = "";
+    summaryEl.textContent = "Loading…";
+    emptyEl.classList.add("hidden");
+    errorEl.classList.add("hidden");
+  }
 
   loadActive(true);
 }
 
 async function ensureMlb(date) {
-  const d = date || dateInput.value || todayPT();
+  const d = date || (dateInput && dateInput.value) || todayPT();
   const payload = await fetchMlb(d);
   cache.mlb = payload;
   mlbCache = payload;
@@ -768,108 +805,140 @@ async function ensureMlb(date) {
 }
 
 async function loadActive(manual = false) {
-  if (manual) statusText.textContent = "Refreshing…";
-  errorEl.classList.add("hidden");
+  const gen = ++loadGen;
+  const tab = activeTab;
+
+  if (manual && statusText) statusText.textContent = "Refreshing…";
+  if (errorEl) errorEl.classList.add("hidden");
 
   try {
-    if (activeTab === "track") {
-      await ensureMlb(dateInput.value || todayPT());
+    if (tab === "track") {
+      await ensureMlb((dateInput && dateInput.value) || todayPT());
+      if (gen !== loadGen || activeTab !== "track") return;
       renderTrack();
       return;
     }
 
-    const date = dateInput.value || todayPT();
+    const date = (dateInput && dateInput.value) || todayPT();
     let payload;
 
-    if (activeTab === "mlb") {
+    if (tab === "mlb") {
       payload = await ensureMlb(date);
-    } else if (activeTab === "nba") {
+    } else if (tab === "nba") {
       payload = await fetchNba(date);
       cache.nba = payload;
-      // still refresh MLB lightly so Track starters stay fresh
+      // Keep starters warm for Track (ignore race)
       ensureMlb(date).catch(() => {});
-    } else if (activeTab === "tennis") {
+    } else if (tab === "tennis") {
       payload = await fetchTennis();
       cache.tennis = payload;
-    } else if (activeTab === "esports") {
+    } else if (tab === "esports") {
       payload = await fetchEsports();
       cache.esports = payload;
+    } else {
+      return;
     }
 
+    // Ignore stale responses after the user switched tabs
+    if (gen !== loadGen || activeTab !== tab) return;
     renderScoreboard(payload);
   } catch (err) {
-    liveDot.className = "dot err";
-    statusText.textContent = "Error";
-    if (activeTab !== "track") {
-      errorEl.textContent = `Could not load: ${err.message}`;
+    if (gen !== loadGen || activeTab !== tab) return;
+    if (liveDot) liveDot.className = "dot err";
+    if (statusText) statusText.textContent = "Error";
+    if (tab !== "track" && errorEl) {
+      errorEl.textContent = `Could not load: ${err.message || err}`;
       errorEl.classList.remove("hidden");
     }
   }
 }
 
-/* ── Events ── */
-dateInput.value = todayPT();
+/* ── Events (delegation — reliable on mobile) ── */
+if (dateInput) dateInput.value = todayPT();
 
-document.querySelectorAll(".sport-tab").forEach((btn) => {
-  btn.addEventListener("click", () => setTab(btn.dataset.tab));
-});
+document.addEventListener("click", (e) => {
+  const tabBtn = e.target.closest(".sport-tab");
+  if (tabBtn) {
+    e.preventDefault();
+    setTab(tabBtn.getAttribute("data-tab"));
+    return;
+  }
 
-document.querySelectorAll(".chip").forEach((chip) => {
-  chip.addEventListener("click", () => {
-    document.querySelectorAll(".chip").forEach((c) => c.classList.remove("active"));
+  const chip = e.target.closest(".chip");
+  if (chip && filtersEl && filtersEl.contains(chip)) {
+    e.preventDefault();
+    filtersEl.querySelectorAll(".chip").forEach((c) => c.classList.remove("active"));
     chip.classList.add("active");
-    filter = chip.dataset.filter;
+    filter = chip.getAttribute("data-filter") || "all";
     if (activeTab !== "track") {
       const payload = cache[activeTab];
       if (payload) renderScoreboard(payload);
       else loadActive(true);
     }
-  });
+    return;
+  }
+
+  const removeBtn = e.target.closest("[data-remove]");
+  if (removeBtn && trackBoard && trackBoard.contains(removeBtn)) {
+    e.preventDefault();
+    const id = removeBtn.getAttribute("data-remove");
+    saveTracks(loadTracks().filter((t) => t.id !== id));
+    renderTrack();
+  }
 });
 
-refreshBtn.addEventListener("click", () => loadActive(true));
-dateInput.addEventListener("change", () => loadActive(true));
+if (refreshBtn) refreshBtn.addEventListener("click", () => loadActive(true));
+if (dateInput) dateInput.addEventListener("change", () => loadActive(true));
 
-trackForm.addEventListener("submit", (e) => {
-  e.preventDefault();
-  const key = trackPlayer.value;
-  if (!key) return;
-  const parsed = starterMap.get(key);
-  if (!parsed) return;
-  const line = parseFloat(trackLine.value);
-  if (!Number.isFinite(line) || line < 0) return;
+if (trackForm) {
+  trackForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const key = trackPlayer && trackPlayer.value;
+    if (!key) return;
+    const parsed = starterMap.get(key);
+    if (!parsed) return;
+    const line = parseFloat(trackLine.value);
+    if (!Number.isFinite(line) || line < 0) return;
 
-  const tracks = loadTracks();
-  tracks.unshift({
-    id: uid(),
-    sport: "mlb",
-    market: "strikeouts",
-    pitcherId: parsed.id,
-    pitcherName: parsed.name,
-    team: parsed.team,
-    gamePk: parsed.gamePk,
-    gameLabel: parsed.gameLabel,
-    side: trackSide.value,
-    line,
-    note: (trackNote.value || "").trim(),
-    createdAt: new Date().toISOString(),
+    const tracks = loadTracks();
+    tracks.unshift({
+      id: uid(),
+      sport: "mlb",
+      market: "strikeouts",
+      pitcherId: parsed.id,
+      pitcherName: parsed.name,
+      team: parsed.team,
+      gamePk: parsed.gamePk,
+      gameLabel: parsed.gameLabel,
+      side: trackSide.value,
+      line,
+      note: ((trackNote && trackNote.value) || "").trim(),
+      createdAt: new Date().toISOString(),
+    });
+    saveTracks(tracks);
+    if (trackNote) trackNote.value = "";
+    if (activeTab !== "track") setTab("track");
+    else renderTrack();
   });
-  saveTracks(tracks);
-  trackNote.value = "";
-  renderTrack();
-  if (activeTab !== "track") setTab("track");
-});
+}
 
-clearSettledBtn.addEventListener("click", () => {
-  const mlb = mlbCache || cache.mlb;
-  const kept = loadTracks().filter((t) => {
-    const stats = resolvePitcherStats(t, mlb);
-    const { settled } = evaluateProp(t.side, t.line, stats?.strikeouts ?? 0, stats?.gameStatus || "Preview");
-    return !settled;
+if (clearSettledBtn) {
+  clearSettledBtn.addEventListener("click", () => {
+    const mlb = mlbCache || cache.mlb;
+    const kept = loadTracks().filter((t) => {
+      const stats = resolvePitcherStats(t, mlb);
+      const { settled } = evaluateProp(
+        t.side,
+        t.line,
+        stats?.strikeouts ?? 0,
+        stats?.gameStatus || "Preview"
+      );
+      return !settled;
+    });
+    saveTracks(kept);
+    renderTrack();
   });
-  saveTracks(kept);
-  renderTrack();
-});
+}
 
 function startPolling() {
   if (timer) clearInterval(timer);
@@ -881,5 +950,6 @@ document.addEventListener("visibilitychange", () => {
 });
 
 // boot
+updateChromeForTab(activeTab);
 loadActive(true);
 startPolling();

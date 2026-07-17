@@ -4,7 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Live Board</title>
-  <link rel="stylesheet" href="style.css" />
+  <meta http-equiv="Cache-Control" content="no-cache" />
+  <link rel="stylesheet" href="style.css?v=3" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
@@ -17,7 +18,7 @@
       <div class="logo-mark" aria-hidden="true">◆</div>
       <div>
         <h1>Live Board</h1>
-        <p class="subtitle">Scores · props · multi-sport</p>
+        <p class="subtitle">Scores · starting pitcher Ks · props</p>
       </div>
     </div>
     <div class="controls">
@@ -33,12 +34,12 @@
     </div>
   </header>
 
-  <nav class="sport-tabs" aria-label="Sports">
-    <button type="button" class="sport-tab active" data-tab="mlb">MLB</button>
-    <button type="button" class="sport-tab" data-tab="nba">NBA</button>
-    <button type="button" class="sport-tab" data-tab="tennis">Tennis</button>
-    <button type="button" class="sport-tab" data-tab="esports">Esports</button>
-    <button type="button" class="sport-tab sport-tab-track" data-tab="track">Track</button>
+  <nav class="sport-tabs" role="tablist" aria-label="Sports">
+    <button type="button" class="sport-tab active" role="tab" aria-selected="true" data-tab="mlb">MLB</button>
+    <button type="button" class="sport-tab" role="tab" aria-selected="false" data-tab="nba">NBA</button>
+    <button type="button" class="sport-tab" role="tab" aria-selected="false" data-tab="tennis">Tennis</button>
+    <button type="button" class="sport-tab" role="tab" aria-selected="false" data-tab="esports">Esports</button>
+    <button type="button" class="sport-tab sport-tab-track" role="tab" aria-selected="false" data-tab="track">Track</button>
   </nav>
 
   <!-- Scoreboard views -->
@@ -100,6 +101,6 @@
     Free public feeds · Times in PT · Auto-refresh · Track data stays on your device
   </footer>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=3"></script>
 </body>
 </html>
