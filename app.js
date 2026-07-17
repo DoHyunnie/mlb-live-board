@@ -624,8 +624,8 @@ function evaluateProp(side, line, current, gameStatus) {
     if (push) result = "push";
     else result = covering ? "hit" : "miss";
   } else if (gameStatus === "Live") {
-    if (push) result = "live-push";
-    else result = covering ? "live-cover" : "live-behind";
+    // Always LIVE while the game is in progress (not PENDING / COVERING)
+    result = "live";
   } else {
     result = "pending";
   }
@@ -637,35 +637,33 @@ function trackCard(track, stats) {
   const line = Number(track.line);
   const side = track.side || "over";
   const gameStatus = stats?.gameStatus || "Preview";
-  const { result } = evaluateProp(side, line, current, gameStatus);
+  const { result, covering } = evaluateProp(side, line, current, gameStatus);
 
   const resultLabels = {
     hit: "HIT",
     miss: "MISS",
     push: "PUSH",
-    "live-cover": "COVERING",
-    "live-behind": "BEHIND",
-    "live-push": "AT LINE",
+    live: "LIVE",
     pending: "PENDING",
   };
   const resultClass = {
     hit: "hit",
     miss: "miss",
     push: "push",
-    "live-cover": "cover",
-    "live-behind": "behind",
-    "live-push": "push",
+    live: "live-badge",
     pending: "pending",
   }[result];
 
   // Progress: for over, fill toward line; for under, show current vs line
   const pct = line > 0 ? Math.min(140, Math.round((current / line) * 100)) : 0;
   const barMod =
-    result === "hit" || result === "live-cover"
+    result === "hit" || (result === "live" && covering)
       ? "bar-good"
-      : result === "miss" || result === "live-behind"
+      : result === "miss"
         ? "bar-bad"
-        : "bar-neutral";
+        : result === "live"
+          ? "bar-neutral"
+          : "bar-neutral";
 
   const meta = [
     stats?.gameLabel || track.gameLabel,
